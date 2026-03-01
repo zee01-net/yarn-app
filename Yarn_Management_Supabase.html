@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Yarn Manager - Inward & Outward</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    <!-- Supabase JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root {
+            --primary: #1e293b;
+            --secondary: #475569;
+            --accent: #4f46e5;
+            --listA: #059669;
+            --listB: #7c3aed;
+            --danger: #e11d48;
+            --warning: #f59e0b;
+            --bg: #f8fafc;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', 'Roboto', Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            margin: 0;
+            padding: 12px;
+            color: #1e293b;
+        }
+
+        .container {
+            max-width: 100%;
+            margin: 0 auto;
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+            padding-bottom: 80px;
+        }
+
+        h1 {
+            color: var(--primary);
+            margin-top: 0;
+            border-bottom: 3px solid var(--accent);
+            display: inline-block;
+            padding-bottom: 5px;
+            font-size: 1.4rem;
+        }
+
+        /* ===== LOADING OVERLAY ===== */
+        #loadingOverlay {
+            position: fixed; inset: 0; background: rgba(255,255,255,0.85);
+            z-index: 9999; display: flex; flex-direction: column;
+            align-items: center; justify-content: center; gap: 12px;
+            font-size: 1rem; font-weight: 600; color: var(--primary);
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 4px solid #e2e8f0;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #loadingOverlay.hidden { display: none; }
+
+        /* ===== TABS ===== */
+        .tab-container {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+            background: white;
+            padding: 8px 0 0;
+        }
+        .tab-button {
+            flex: 1;
+            padding: 12px 10px;
+            border: none;
+            background: #f1f5f9;
+            color: var(--secondary);
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            border-radius: 8px 8px 0 0;
+            transition: all 0.2s;
+            min-height: 48px;
+        }
+        .tab-button.active {
+            background: white;
+            color: var(--primary);
+            border-bottom: 4px solid var(--accent);
+        }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* ===== FORM ===== */
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 12px;
+            background-color: #fff;
+            padding: 16px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+        .input-grid.editing { border: 2px solid var(--warning); background-color: #fffbeb; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group label {
+            font-size: 11px; font-weight: 700; color: var(--secondary);
+            margin-bottom: 5px; text-transform: uppercase;
+        }
+        .form-group input, .form-group select {
+            padding: 11px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+            font-size: 15px; width: 100%;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            min-height: 44px;
+        }
+        .form-group input:focus, .form-group select:focus { border-color: var(--accent); outline: none; }
+        .auto-calc { background-color: #f1f5f9; font-weight: bold; }
+
+        /* ===== ACTIONS ===== */
+        .main-actions {
+            display: flex; gap: 10px; margin-bottom: 24px;
+            padding-bottom: 16px; border-bottom: 1px solid #f1f5f9;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 12px 18px; border: none; border-radius: 6px;
+            font-weight: 600; cursor: pointer; font-size: 14px;
+            display: inline-flex; align-items: center; gap: 6px;
+            color: white; transition: all 0.2s;
+            min-height: 44px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        button:active { filter: brightness(0.9); transform: scale(0.97); }
+        .btn-add { background-color: var(--accent); flex: 1; justify-content: center; }
+        .btn-update { background-color: var(--warning); flex: 1; justify-content: center; display: none; color: #1e293b; }
+        .btn-reset { background-color: #64748b; }
+
+        /* ===== FILTER BAR ===== */
+        .filter-bar {
+            background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+            padding: 12px; margin-bottom: 0;
+            display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;
+        }
+        .filter-bar .fg { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+        .filter-bar label { font-size: 10px; font-weight: 700; color: var(--secondary); text-transform: uppercase; }
+        .filter-bar input[type="text"], .filter-bar input[type="date"] {
+            padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+            font-size: 13px; width: 100%; min-height: 38px;
+        }
+        .filter-bar input:focus { border-color: var(--accent); outline: none; }
+        .filter-bar .fg-actions { display: flex; gap: 8px; align-items: flex-end; }
+        .btn-filter-clear {
+            background: #64748b; color: white; padding: 8px 14px; border-radius: 6px;
+            font-size: 12px; font-weight: 600; border: none; cursor: pointer;
+            min-height: 38px; white-space: nowrap;
+        }
+        .filter-count { font-size: 11px; color: var(--secondary); align-self: flex-end; white-space: nowrap; padding-bottom: 4px; }
+
+        /* ===== LIST SECTIONS ===== */
+        .list-section { margin-bottom: 36px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+        .list-header {
+            padding: 10px 12px; display: flex; justify-content: space-between;
+            align-items: center; color: white; flex-wrap: wrap; gap: 8px;
+        }
+        .list-header-title { font-weight: 700; font-size: 0.95rem; }
+        .header-A { background-color: #0f172a; }
+        .header-B { background-color: var(--listB); }
+        .list-header-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .list-header button { background-color: var(--listA); padding: 7px 12px; font-size: 12px; min-height: 36px; }
+        .table-wrapper { overflow-x: auto; max-height: 420px; -webkit-overflow-scrolling: touch; }
+        table { width: 100%; border-collapse: collapse; min-width: 900px; background: white; }
+        thead th {
+            background-color: #f8fafc; color: #475569; padding: 10px 8px; text-align: left;
+            font-size: 11px; position: sticky; top: 0; z-index: 5; border-bottom: 2px solid #e2e8f0;
+            cursor: pointer; user-select: none; white-space: nowrap;
+        }
+        thead th:hover { background: #f1f5f9; }
+        thead th .sort-icon { margin-left: 4px; opacity: 0.4; }
+        thead th.sort-asc .sort-icon::after { content: '▲'; }
+        thead th.sort-desc .sort-icon::after { content: '▼'; }
+        thead th:not(.sort-asc):not(.sort-desc) .sort-icon::after { content: '⇅'; }
+        tbody td { padding: 9px 8px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        tbody tr.selected-row { background: #eff6ff; }
+        tfoot tr { background-color: #f8fafc; font-weight: bold; border-top: 2px solid #1e293b; }
+        tfoot td { padding: 10px 8px; color: var(--primary); font-size: 13px; }
+
+        /* ===== CHECKBOX COL ===== */
+        .cb-col { width: 36px; text-align: center; }
+        .cb-col input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+        .bulk-bar {
+            display: none; background: #fef2f2; border: 1px solid #fecaca;
+            padding: 10px 14px; border-radius: 6px; margin: 8px 0;
+            align-items: center; gap: 10px; flex-wrap: wrap;
+        }
+        .bulk-bar.visible { display: flex; }
+        .bulk-bar span { font-size: 13px; font-weight: 600; color: var(--danger); flex: 1; }
+        .btn-bulk-del { background: var(--danger); padding: 8px 14px; font-size: 13px; }
+        .btn-bulk-cancel { background: #64748b; padding: 8px 14px; font-size: 13px; }
+
+        /* ===== ICON BUTTONS ===== */
+        .icon-btn { padding: 7px 10px; border-radius: 4px; border: none; cursor: pointer; margin-right: 3px; min-height: 32px; }
+        .edit-btn { background: var(--warning); color: #1e293b; }
+        .del-btn { background: var(--danger); color: white; }
+        .copy-btn { background: #0ea5e9; color: white; }
+
+        /* ===== UNDO TOAST ===== */
+        #toast {
+            visibility: hidden; min-width: 260px; background-color: #1e293b; color: #fff;
+            text-align: center; border-radius: 8px; padding: 14px 18px; position: fixed;
+            z-index: 200; left: 50%; bottom: 24px; transform: translateX(-50%);
+            display: flex; align-items: center; gap: 12px; justify-content: center;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        }
+        #toast.show { visibility: visible; animation: fadein 0.3s; }
+        #toast.hiding { animation: fadeout 0.4s forwards; }
+        #toast-undo-btn {
+            background: var(--accent); color: white; border: none; border-radius: 5px;
+            padding: 6px 14px; font-weight: 700; cursor: pointer; font-size: 13px;
+            display: none; min-height: 32px;
+        }
+        #toast-undo-btn.visible { display: inline-flex; align-items: center; }
+        @keyframes fadein { from { bottom: 0; opacity: 0; } to { bottom: 24px; opacity: 1; } }
+        @keyframes fadeout { from { bottom: 24px; opacity: 1; } to { bottom: 0; opacity: 0; } }
+
+        /* ===== MISC ===== */
+        .freq-badge {
+            background-color: var(--danger); color: white; padding: 2px 6px;
+            border-radius: 10px; font-size: 11px; margin-left: 6px;
+        }
+        .sum-only { color: var(--listB); font-weight: bold; font-size: 13px; }
+
+        /* ===== STOCK SUMMARY DASHBOARD ===== */
+        .stock-dashboard {
+            margin-top: 8px; padding: 14px 16px;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            border-radius: 10px; color: white;
+        }
+        .stock-dashboard h3 { margin: 0 0 12px; font-size: 0.95rem; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.5px; }
+        .dash-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+        .dash-card { background: rgba(255,255,255,0.08); border-radius: 8px; padding: 12px 14px; text-align: center; }
+        .dash-card .dc-label { font-size: 10px; color: rgba(255,255,255,0.55); text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.4px; }
+        .dash-card .dc-value { font-size: 1.5rem; font-weight: 800; }
+        .dc-in { color: #34d399; }
+        .dc-out { color: #f87171; }
+        .dc-rem { color: #818cf8; }
+        .dc-sku { color: #fbbf24; }
+
+        /* ===== BACKUP REMINDER ===== */
+        .backup-bar {
+            display: none; background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+            padding: 10px 14px; margin-bottom: 16px;
+            align-items: center; gap: 10px; flex-wrap: wrap;
+        }
+        .backup-bar.visible { display: flex; }
+        .backup-bar span { font-size: 13px; flex: 1; color: #92400e; font-weight: 600; }
+        .btn-backup { background: var(--warning); color: #1e293b; padding: 8px 14px; font-size: 13px; }
+        .btn-backup-dismiss { background: #64748b; padding: 8px 12px; font-size: 12px; }
+
+        /* ===== MOBILE RESPONSIVE ===== */
+        @media (max-width: 600px) {
+            body { padding: 8px; }
+            .container { padding: 10px; padding-bottom: 80px; }
+            h1 { font-size: 1.1rem; }
+            .tab-button { font-size: 0.8rem; padding: 10px 6px; }
+            .input-grid { grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; }
+            .filter-bar { gap: 8px; }
+            .filter-bar .fg { min-width: 100px; }
+            .main-actions { gap: 8px; }
+            .btn-reset { flex: 0 0 auto; padding: 12px 14px; }
+            .list-header { padding: 8px 10px; }
+            .list-header-actions button { padding: 6px 10px; font-size: 11px; }
+            .dash-cards { grid-template-columns: 1fr 1fr; }
+            .dash-card .dc-value { font-size: 1.2rem; }
+        }
+        @media (max-width: 380px) {
+            .input-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- LOADING OVERLAY -->
+<div id="loadingOverlay">
+    <div class="spinner"></div>
+    <span id="loadingText">Connecting to database…</span>
+</div>
+
+<div class="container">
+    <h1>🧶 Yarn Management System</h1>
+
+    <!-- BACKUP REMINDER -->
+    <div class="backup-bar" id="backupBar">
+        <span>⚠️ It's been 7+ days since your last backup. Export your data to keep it safe!</span>
+        <button class="btn-backup" onclick="doBackupExport()">📥 Backup Now</button>
+        <button class="btn-backup-dismiss" onclick="dismissBackup()">Dismiss</button>
+    </div>
+
+    <div class="tab-container">
+        <button id="tab-inward" class="tab-button active" onclick="switchTab(0)">📥 INWARD</button>
+        <button id="tab-outward" class="tab-button" onclick="switchTab(1)">📤 OUTWARD</button>
+    </div>
+
+    <!-- ==================== INWARD SECTION ==================== -->
+    <div id="inward-section" class="tab-content active">
+        <div class="input-grid" id="inwardForm">
+            <div class="form-group"><label>Date</label><input type="date" id="in_date"></div>
+            <div class="form-group"><label>Inward No</label><input type="text" id="in_inward" list="list_in_inward" autocomplete="off"></div>
+            <div class="form-group"><label>Count</label><input type="text" id="in_count" list="list_in_count" autocomplete="off"></div>
+            <div class="form-group"><label>Brand</label><input type="text" id="in_brand" list="list_in_brand" autocomplete="off"></div>
+            <div class="form-group"><label>Lot No</label><input type="text" id="in_lotNo" list="list_in_lotNo" autocomplete="off"></div>
+            <div class="form-group"><label>Paper Cone</label><input type="text" id="in_peparCon" list="list_in_peparCon" autocomplete="off"></div>
+            <div class="form-group"><label>Cones/Bag</label><input type="text" id="in_conPrBag" list="list_in_conPrBag" autocomplete="off"></div>
+            <div class="form-group"><label>Gross Wt</label><input type="text" id="in_grossWt"></div>
+            <div class="form-group"><label>Net Wt (KG)</label><input type="number" inputmode="decimal" id="in_netWt" class="auto-calc"></div>
+            <div class="form-group"><label>Wt (LBS)</label><input type="number" inputmode="decimal" id="in_wtLbs" class="auto-calc"></div>
+            <div class="form-group"><label>Bags</label><input type="number" inputmode="numeric" id="in_netBag"></div>
+            <div class="form-group"><label>Packs</label><input type="number" inputmode="numeric" id="in_netPack"></div>
+            <div class="form-group"><label>Lab Status</label>
+                <select id="in_labTesting">
+                    <option value="Pending">Pending</option>
+                    <option value="Pass">Pass</option>
+                    <option value="Fail">Fail</option>
+                </select>
+            </div>
+            <div class="form-group"><label>Vehicle</label><input type="text" id="in_vehicle" list="list_in_vehicle" autocomplete="off"></div>
+            <div class="form-group"><label>Party</label><input type="text" id="in_party" list="list_in_party" autocomplete="off"></div>
+        </div>
+
+        <datalist id="list_in_inward"></datalist>
+        <datalist id="list_in_count"></datalist>
+        <datalist id="list_in_brand"></datalist>
+        <datalist id="list_in_lotNo"></datalist>
+        <datalist id="list_in_peparCon"></datalist>
+        <datalist id="list_in_conPrBag"></datalist>
+        <datalist id="list_in_vehicle"></datalist>
+        <datalist id="list_in_party"></datalist>
+
+        <div class="main-actions">
+            <button id="in_btnAdd" class="btn-add" onclick="inwardHandleAdd()">＋ Add Entry</button>
+            <button id="in_btnUpdate" class="btn-update" onclick="inwardHandleUpdate()">✔ Update Entry</button>
+            <button class="btn-reset" onclick="inwardResetForm()">✕ Clear</button>
+        </div>
+
+        <!-- LIST A -->
+        <div class="list-section">
+            <div class="list-header header-A">
+                <span class="list-header-title">LIST A — Master Log (Inward)</span>
+                <div class="list-header-actions">
+                    <button onclick="inwardExport('A','xlsx')">Excel</button>
+                    <button onclick="inwardExport('A','pdf')">PDF</button>
+                    <button onclick="document.getElementById('in_importFile').click()">Import</button>
+                </div>
+            </div>
+            <div class="filter-bar" id="inA_filterBar">
+                <div class="fg"><label>Count</label><input type="text" id="inA_countInput" placeholder="Filter count…" oninput="filterTable('inA')"></div>
+                <div class="fg"><label>Brand</label><input type="text" id="inA_brandInput" placeholder="Filter brand…" oninput="filterTable('inA')"></div>
+                <div class="fg"><label>From Date</label><input type="date" id="inA_dateFrom" oninput="filterTable('inA')"></div>
+                <div class="fg"><label>To Date</label><input type="date" id="inA_dateTo" oninput="filterTable('inA')"></div>
+                <div class="fg-actions">
+                    <button class="btn-filter-clear" onclick="clearSearch('inA')">✕ Clear</button>
+                    <span class="filter-count" id="inA_rowCount"></span>
+                </div>
+            </div>
+            <div class="bulk-bar" id="inA_bulkBar">
+                <span id="inA_bulkCount">0 selected</span>
+                <button class="btn-bulk-del" onclick="bulkDelete('in')">🗑 Delete Selected</button>
+                <button class="btn-bulk-cancel" onclick="cancelBulk('inA')">Cancel</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="in_tableA"><thead></thead><tbody></tbody><tfoot></tfoot></table>
+            </div>
+        </div>
+
+        <!-- LIST B -->
+        <div class="list-section">
+            <div class="list-header header-B">
+                <span class="list-header-title">LIST B — Unique Summary</span>
+                <div class="list-header-actions">
+                    <button onclick="inwardExport('B','xlsx')">Excel</button>
+                    <button onclick="inwardExport('B','pdf')">PDF</button>
+                </div>
+            </div>
+            <div class="filter-bar">
+                <div class="fg"><label>Count</label><input type="text" id="inB_countInput" placeholder="Filter count…" oninput="filterTable('inB')"></div>
+                <div class="fg"><label>Brand</label><input type="text" id="inB_brandInput" placeholder="Filter brand…" oninput="filterTable('inB')"></div>
+                <div class="fg"><label>From Date</label><input type="date" id="inB_dateFrom" oninput="filterTable('inB')"></div>
+                <div class="fg"><label>To Date</label><input type="date" id="inB_dateTo" oninput="filterTable('inB')"></div>
+                <div class="fg-actions">
+                    <button class="btn-filter-clear" onclick="clearSearch('inB')">✕ Clear</button>
+                    <span class="filter-count" id="inB_rowCount"></span>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table id="in_tableB"><thead></thead><tbody></tbody><tfoot></tfoot></table>
+            </div>
+        </div>
+
+        <!-- INWARD STOCK DASHBOARD -->
+        <div class="stock-dashboard" id="inward_dashboard">
+            <h3>📊 Stock Summary</h3>
+            <div class="dash-cards">
+                <div class="dash-card"><div class="dc-label">Total Inward Bags</div><div class="dc-value dc-in" id="dash_in_bags">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Inward Packs</div><div class="dc-value dc-in" id="dash_in_packs">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Outward Bags</div><div class="dc-value dc-out" id="dash_out_bags">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Outward Packs</div><div class="dc-value dc-out" id="dash_out_packs">0</div></div>
+                <div class="dash-card"><div class="dc-label">Remaining Bags</div><div class="dc-value dc-rem" id="dash_rem_bags">0</div></div>
+                <div class="dash-card"><div class="dc-label">Remaining Packs</div><div class="dc-value dc-rem" id="dash_rem_packs">0</div></div>
+                <div class="dash-card"><div class="dc-label">Unique SKUs</div><div class="dc-value dc-sku" id="dash_skus">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Entries</div><div class="dc-value dc-sku" id="dash_entries">0</div></div>
+            </div>
+        </div>
+
+        <input type="file" id="in_importFile" hidden accept=".xlsx,.xls" onchange="inwardHandleImport(event)">
+    </div>
+
+    <!-- ==================== OUTWARD SECTION ==================== -->
+    <div id="outward-section" class="tab-content">
+        <div class="input-grid" id="outwardForm">
+            <div class="form-group"><label>Date</label><input type="date" id="out_date"></div>
+            <div class="form-group"><label>D.O #</label><input type="text" id="out_doNo" list="list_out_doNo" autocomplete="off"></div>
+            <div class="form-group"><label>Count</label><input type="text" id="out_count" list="list_out_count" autocomplete="off"></div>
+            <div class="form-group"><label>Brand</label><input type="text" id="out_brand" list="list_out_brand" autocomplete="off"></div>
+            <div class="form-group"><label>Against Count</label><input type="text" id="out_againstCount" list="list_out_againstCount" autocomplete="off"></div>
+            <div class="form-group"><label>Against Brand</label><input type="text" id="out_againstBrand" list="list_out_againstBrand" autocomplete="off"></div>
+            <div class="form-group"><label>Lot No</label><input type="text" id="out_lotNo" list="list_out_lotNo" autocomplete="off"></div>
+            <div class="form-group"><label>Paper Cone</label><input type="text" id="out_peparCon" list="list_out_peparCon" autocomplete="off"></div>
+            <div class="form-group"><label>Cones/Bag</label><input type="text" id="out_conPrBag" list="list_out_conPrBag" autocomplete="off"></div>
+            <div class="form-group"><label>Gross Wt Pr Bag</label><input type="text" id="out_grossWtPrBag"></div>
+            <div class="form-group"><label>Net Wt Pr Bag (KG)</label><input type="number" inputmode="decimal" id="out_netWtPrBag" class="auto-calc"></div>
+            <div class="form-group"><label>Wt Pr Bag (LBS)</label><input type="number" inputmode="decimal" id="out_wtLbsPrBag" class="auto-calc"></div>
+            <div class="form-group"><label>Net Bag</label><input type="number" inputmode="numeric" id="out_netBag"></div>
+            <div class="form-group"><label>Net Pack</label><input type="number" inputmode="numeric" id="out_netPack"></div>
+            <div class="form-group"><label>Vehicle</label><input type="text" id="out_vehicle" list="list_out_vehicle" autocomplete="off"></div>
+            <div class="form-group"><label>Party</label><input type="text" id="out_party" list="list_out_party" autocomplete="off"></div>
+        </div>
+
+        <datalist id="list_out_doNo"></datalist>
+        <datalist id="list_out_count"></datalist>
+        <datalist id="list_out_brand"></datalist>
+        <datalist id="list_out_againstCount"></datalist>
+        <datalist id="list_out_againstBrand"></datalist>
+        <datalist id="list_out_lotNo"></datalist>
+        <datalist id="list_out_peparCon"></datalist>
+        <datalist id="list_out_conPrBag"></datalist>
+        <datalist id="list_out_vehicle"></datalist>
+        <datalist id="list_out_party"></datalist>
+
+        <div class="main-actions">
+            <button id="out_btnAdd" class="btn-add" onclick="outwardHandleAdd()">＋ Add Entry</button>
+            <button id="out_btnUpdate" class="btn-update" onclick="outwardHandleUpdate()">✔ Update Entry</button>
+            <button class="btn-reset" onclick="outwardResetForm()">✕ Clear</button>
+        </div>
+
+        <!-- OUTWARD LIST A -->
+        <div class="list-section">
+            <div class="list-header header-A">
+                <span class="list-header-title">LIST A — Master Log (Outward)</span>
+                <div class="list-header-actions">
+                    <button onclick="outwardExport('xlsx')">Excel</button>
+                    <button onclick="outwardExport('pdf')">PDF</button>
+                    <button onclick="document.getElementById('out_importFile').click()">Import</button>
+                </div>
+            </div>
+            <div class="filter-bar">
+                <div class="fg"><label>Count</label><input type="text" id="outA_countInput" placeholder="Filter count…" oninput="filterTable('outA')"></div>
+                <div class="fg"><label>Brand</label><input type="text" id="outA_brandInput" placeholder="Filter brand…" oninput="filterTable('outA')"></div>
+                <div class="fg"><label>From Date</label><input type="date" id="outA_dateFrom" oninput="filterTable('outA')"></div>
+                <div class="fg"><label>To Date</label><input type="date" id="outA_dateTo" oninput="filterTable('outA')"></div>
+                <div class="fg-actions">
+                    <button class="btn-filter-clear" onclick="clearSearch('outA')">✕ Clear</button>
+                    <span class="filter-count" id="outA_rowCount"></span>
+                </div>
+            </div>
+            <div class="bulk-bar" id="outA_bulkBar">
+                <span id="outA_bulkCount">0 selected</span>
+                <button class="btn-bulk-del" onclick="bulkDelete('out')">🗑 Delete Selected</button>
+                <button class="btn-bulk-cancel" onclick="cancelBulk('outA')">Cancel</button>
+            </div>
+            <div class="table-wrapper">
+                <table id="out_tableA"><thead></thead><tbody></tbody><tfoot></tfoot></table>
+            </div>
+        </div>
+
+        <!-- OUTWARD STOCK DASHBOARD -->
+        <div class="stock-dashboard">
+            <h3>📊 Outward Summary</h3>
+            <div class="dash-cards">
+                <div class="dash-card"><div class="dc-label">Total Bags Out</div><div class="dc-value dc-out" id="dash_out2_bags">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Packs Out</div><div class="dc-value dc-out" id="dash_out2_packs">0</div></div>
+                <div class="dash-card"><div class="dc-label">Unique Parties</div><div class="dc-value dc-sku" id="dash_out2_parties">0</div></div>
+                <div class="dash-card"><div class="dc-label">Total Entries</div><div class="dc-value dc-sku" id="dash_out2_entries">0</div></div>
+            </div>
+        </div>
+
+        <input type="file" id="out_importFile" hidden accept=".xlsx,.xls" onchange="outwardHandleImport(event)">
+    </div>
+</div>
+
+<!-- TOAST WITH UNDO -->
+<div id="toast">
+    <span id="toast-msg">Action Successful!</span>
+    <button id="toast-undo-btn" onclick="undoDelete()">↩ UNDO</button>
+</div>
+
+<script>
+// ==================== SUPABASE CONFIG ====================
+const SUPABASE_URL = 'https://nagjcwuvrybwcsgyihbx.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_AW8UMNO4gDcvd4bI5Q7wIA_N_MBrJks';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ==================== IN-MEMORY CACHE ====================
+// All data is fetched once from Supabase at startup, stored here,
+// and synced back on every add / update / delete.
+let inwardCache = [];  // rows from inward table
+let outwardCache = []; // rows from outward table
+
+// ==================== CONSTANTS ====================
+const LBS_FACTOR = 2.20462;
+let undoStack = { type: null, data: null };
+let toastTimer = null;
+const sortState = { inA: { col: -1, dir: 1 }, outA: { col: -1, dir: 1 } };
+
+const in_keys = ["date","inward","count","brand","lotNo","peparCon","conPrBag","grossWt","netWt","wtLbs","netBag","netPack","labTesting","vehicle","party"];
+const in_headersA = ["DATE","INWARD","COUNT","BRAND","LOT NO","P.CONE","C/BAG","GROSS","NET KG","WT LBS","BAGS","PACKS","LAB","VEHICLE","PARTY"];
+const in_headersB = ["SR NO","COUNT","BRAND","LOT NO","P.CONE","C/BAG","BAGS IN","PACKS IN","BAGS OUT","PACKS OUT","BAGS REM","PACKS REM","PARTY"];
+let in_currentEditIndex = -1;
+let in_currentEditId = null; // Supabase row id for inward
+
+const out_keys = ["date","doNo","count","brand","againstCount","againstBrand","lotNo","peparCon","conPrBag","grossWtPrBag","netWtPrBag","wtLbsPrBag","netBag","netPack","vehicle","party"];
+const out_headersA = ["DATE","D.O #","COUNT","BRAND","AGAINST COUNT","AGAINST BRAND","LOT NO","P.CONE","C/BAG","GROSS PR BAG","NET PR BAG KG","WT PR BAG LBS","BAGS","PACKS","VEHICLE","PARTY"];
+let out_currentEditIndex = -1;
+let out_currentEditId = null; // Supabase row id for outward
+
+// ==================== LOADING ====================
+function showLoading(msg = 'Please wait…') {
+    document.getElementById('loadingText').textContent = msg;
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+}
+
+// ==================== SUPABASE DATA ACCESS ====================
+async function fetchAll() {
+    showLoading('Loading data from Supabase…');
+    const [inRes, outRes] = await Promise.all([
+        db.from('inward').select('*').order('id', { ascending: true }),
+        db.from('outward').select('*').order('id', { ascending: true })
+    ]);
+    if (inRes.error) { alert('Error loading inward: ' + inRes.error.message); }
+    else inwardCache = inRes.data || [];
+
+    if (outRes.error) { alert('Error loading outward: ' + outRes.error.message); }
+    else outwardCache = outRes.data || [];
+
+    hideLoading();
+    refreshAll();
+}
+
+function refreshAll() {
+    inwardRefreshTables();
+    inwardUpdateAutocompletes();
+    outwardRefreshTables();
+    outwardUpdateAutocompletes();
+    updateDashboards();
+    checkBackupReminder();
+    reapplySearches();
+}
+
+// ==================== INWARD CRUD ====================
+async function inwardHandleAdd() {
+    const entry = buildEntry('in_', in_keys);
+    if (!entry.date || !entry.inward) return alert("Date and Inward No are required!");
+    showLoading('Saving…');
+    const { data, error } = await db.from('inward').insert([entry]).select();
+    hideLoading();
+    if (error) return alert('Error saving: ' + error.message);
+    inwardCache.push(data[0]);
+    inwardResetForm();
+    refreshAll();
+    showToast("Inward Entry Added!");
+}
+
+async function inwardHandleUpdate() {
+    const entry = buildEntry('in_', in_keys);
+    showLoading('Updating…');
+    const { error } = await db.from('inward').update(entry).eq('id', in_currentEditId);
+    hideLoading();
+    if (error) return alert('Error updating: ' + error.message);
+    inwardCache[in_currentEditIndex] = { ...inwardCache[in_currentEditIndex], ...entry };
+    inwardResetForm();
+    refreshAll();
+    showToast("Inward Entry Updated!");
+}
+
+async function inwardDeleteRow(index) {
+    const item = inwardCache[index];
+    if (!confirm('Delete this entry?')) return;
+    showLoading('Deleting…');
+    const { error } = await db.from('inward').delete().eq('id', item.id);
+    hideLoading();
+    if (error) return alert('Error deleting: ' + error.message);
+    undoStack = { type: 'in', data: item, index };
+    inwardCache.splice(index, 1);
+    refreshAll();
+    showToast("Entry Deleted", true);
+}
+
+async function undoDelete() {
+    if (!undoStack.data) return;
+    const { type, data } = undoStack;
+    showLoading('Restoring…');
+    const table = type === 'in' ? 'inward' : 'outward';
+    const { id, ...rest } = data; // remove id to let Supabase assign
+    const { data: restored, error } = await db.from(table).insert([rest]).select();
+    hideLoading();
+    if (error) return alert('Error restoring: ' + error.message);
+    if (type === 'in') inwardCache.push(restored[0]);
+    else outwardCache.push(restored[0]);
+    undoStack = { type: null, data: null };
+    hideToast();
+    refreshAll();
+    showToast("Entry Restored ✓");
+}
+
+async function inwardBulkDelete(ids, indices) {
+    showLoading('Deleting…');
+    const { error } = await db.from('inward').delete().in('id', ids);
+    hideLoading();
+    if (error) return alert('Error: ' + error.message);
+    inwardCache = inwardCache.filter((_, i) => !indices.includes(i));
+    cancelBulk('inA');
+    refreshAll();
+    showToast(`${ids.length} records deleted`);
+}
+
+async function outwardBulkDelete(ids, indices) {
+    showLoading('Deleting…');
+    const { error } = await db.from('outward').delete().in('id', ids);
+    hideLoading();
+    if (error) return alert('Error: ' + error.message);
+    outwardCache = outwardCache.filter((_, i) => !indices.includes(i));
+    cancelBulk('outA');
+    refreshAll();
+    showToast(`${ids.length} records deleted`);
+}
+
+// ==================== OUTWARD CRUD ====================
+async function outwardHandleAdd() {
+    const entry = buildEntry('out_', out_keys);
+    if (!entry.date || !entry.doNo) return alert("Date and D.O # are required!");
+    showLoading('Saving…');
+    const { data, error } = await db.from('outward').insert([entry]).select();
+    hideLoading();
+    if (error) return alert('Error saving: ' + error.message);
+    outwardCache.push(data[0]);
+    outwardResetForm();
+    refreshAll();
+    showToast("Outward Entry Added!");
+}
+
+async function outwardHandleUpdate() {
+    const entry = buildEntry('out_', out_keys);
+    showLoading('Updating…');
+    const { error } = await db.from('outward').update(entry).eq('id', out_currentEditId);
+    hideLoading();
+    if (error) return alert('Error updating: ' + error.message);
+    outwardCache[out_currentEditIndex] = { ...outwardCache[out_currentEditIndex], ...entry };
+    outwardResetForm();
+    refreshAll();
+    showToast("Outward Entry Updated!");
+}
+
+async function outwardDeleteRow(index) {
+    const item = outwardCache[index];
+    if (!confirm('Delete this entry?')) return;
+    showLoading('Deleting…');
+    const { error } = await db.from('outward').delete().eq('id', item.id);
+    hideLoading();
+    if (error) return alert('Error deleting: ' + error.message);
+    undoStack = { type: 'out', data: item, index };
+    outwardCache.splice(index, 1);
+    refreshAll();
+    showToast("Entry Deleted", true);
+}
+
+// ==================== IMPORT (batch insert) ====================
+async function inwardHandleImport(e) {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+        try {
+            const wb = XLSX.read(ev.target.result, { type: 'binary' });
+            const imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            // strip any id fields that might conflict
+            const clean = imported.map(r => { const c = {...r}; delete c.id; return c; });
+            showLoading('Importing…');
+            const { data, error } = await db.from('inward').insert(clean).select();
+            hideLoading();
+            if (error) return alert('Import error: ' + error.message);
+            inwardCache = inwardCache.concat(data);
+            refreshAll();
+            showToast("Inward Data Imported!");
+        } catch(err) { alert("Error importing file: " + err.message); }
+    };
+    reader.readAsBinaryString(e.target.files[0]);
+    e.target.value = '';
+}
+
+async function outwardHandleImport(e) {
+    const reader = new FileReader();
+    reader.onload = async ev => {
+        try {
+            const wb = XLSX.read(ev.target.result, { type: 'binary' });
+            const imported = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+            const clean = imported.map(r => { const c = {...r}; delete c.id; return c; });
+            showLoading('Importing…');
+            const { data, error } = await db.from('outward').insert(clean).select();
+            hideLoading();
+            if (error) return alert('Import error: ' + error.message);
+            outwardCache = outwardCache.concat(data);
+            refreshAll();
+            showToast("Outward Data Imported!");
+        } catch(err) { alert("Error importing file: " + err.message); }
+    };
+    reader.readAsBinaryString(e.target.files[0]);
+    e.target.value = '';
+}
+
+// ==================== BULK DELETE ====================
+function bulkDelete(type) {
+    const prefix = type === 'in' ? 'inA' : 'outA';
+    const selected = [...document.querySelectorAll(`.${prefix}-cb:checked`)];
+    const indices = selected.map(cb => parseInt(cb.dataset.idx));
+    if (!indices.length) return;
+    if (!confirm(`Delete ${indices.length} selected record(s) permanently?`)) return;
+    if (type === 'in') {
+        const ids = indices.map(i => inwardCache[i].id);
+        inwardBulkDelete(ids, indices);
+    } else {
+        const ids = indices.map(i => outwardCache[i].id);
+        outwardBulkDelete(ids, indices);
+    }
+}
+
+// ==================== HELPERS ====================
+function buildEntry(prefix, keys) {
+    const entry = {};
+    keys.forEach(k => {
+        const el = document.getElementById(`${prefix}${k}`);
+        entry[k] = el ? el.value : '';
+    });
+    return entry;
+}
+
+// ==================== AUTO CALC ====================
+function inwardSetupAutoCalc() {
+    document.getElementById('in_netWt').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('in_wtLbs').value = v ? (v * LBS_FACTOR).toFixed(2) : '';
+    });
+    document.getElementById('in_wtLbs').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('in_netWt').value = v ? (v / LBS_FACTOR).toFixed(2) : '';
+    });
+}
+
+function outwardSetupAutoCalc() {
+    document.getElementById('out_netWtPrBag').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('out_wtLbsPrBag').value = v ? (v * LBS_FACTOR).toFixed(2) : '';
+    });
+    document.getElementById('out_wtLbsPrBag').addEventListener('input', e => {
+        const v = parseFloat(e.target.value);
+        document.getElementById('out_netWtPrBag').value = v ? (v / LBS_FACTOR).toFixed(2) : '';
+    });
+}
+
+// ==================== AUTOCOMPLETES ====================
+function inwardUpdateAutocompletes() {
+    ["inward","count","brand","lotNo","peparCon","conPrBag","vehicle","party"].forEach(f => {
+        const list = document.getElementById(`list_in_${f}`);
+        if (list) {
+            const unique = [...new Set(inwardCache.map(i => i[f]).filter(Boolean))];
+            list.innerHTML = unique.map(v => `<option value="${v}">`).join('');
+        }
+    });
+}
+
+function outwardUpdateAutocompletes() {
+    ["doNo","count","brand","againstCount","againstBrand","lotNo","peparCon","conPrBag","vehicle","party"].forEach(f => {
+        const list = document.getElementById(`list_out_${f}`);
+        if (list) {
+            const unique = [...new Set(outwardCache.map(i => i[f]).filter(Boolean))];
+            list.innerHTML = unique.map(v => `<option value="${v}">`).join('');
+        }
+    });
+}
+
+// ==================== FORM HELPERS ====================
+function inwardLoadForEdit(index) {
+    const item = inwardCache[index];
+    in_keys.forEach(k => { const el = document.getElementById(`in_${k}`); if (el) el.value = item[k] || ''; });
+    in_currentEditIndex = index;
+    in_currentEditId = item.id;
+    document.getElementById('inwardForm').classList.add('editing');
+    document.getElementById('in_btnAdd').style.display = 'none';
+    document.getElementById('in_btnUpdate').style.display = 'inline-flex';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function inwardResetForm() {
+    in_keys.forEach(k => { const el = document.getElementById(`in_${k}`); if (el && k !== 'date') el.value = ''; });
+    in_currentEditIndex = -1; in_currentEditId = null;
+    document.getElementById('inwardForm').classList.remove('editing');
+    document.getElementById('in_btnAdd').style.display = 'inline-flex';
+    document.getElementById('in_btnUpdate').style.display = 'none';
+}
+
+function inwardDuplicateRow(index) {
+    const copy = { ...inwardCache[index] };
+    in_keys.forEach(k => { const el = document.getElementById(`in_${k}`); if (el) el.value = copy[k] || ''; });
+    in_currentEditIndex = -1; in_currentEditId = null;
+    document.getElementById('inwardForm').classList.remove('editing');
+    document.getElementById('in_btnAdd').style.display = 'inline-flex';
+    document.getElementById('in_btnUpdate').style.display = 'none';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast("Row copied — edit and save as new entry");
+}
+
+function outwardLoadForEdit(index) {
+    const item = outwardCache[index];
+    out_keys.forEach(k => { const el = document.getElementById(`out_${k}`); if (el) el.value = item[k] || ''; });
+    out_currentEditIndex = index;
+    out_currentEditId = item.id;
+    document.getElementById('outwardForm').classList.add('editing');
+    document.getElementById('out_btnAdd').style.display = 'none';
+    document.getElementById('out_btnUpdate').style.display = 'inline-flex';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function outwardResetForm() {
+    out_keys.forEach(k => { const el = document.getElementById(`out_${k}`); if (el && k !== 'date') el.value = ''; });
+    out_currentEditIndex = -1; out_currentEditId = null;
+    document.getElementById('outwardForm').classList.remove('editing');
+    document.getElementById('out_btnAdd').style.display = 'inline-flex';
+    document.getElementById('out_btnUpdate').style.display = 'none';
+}
+
+function outwardDuplicateRow(index) {
+    const copy = { ...outwardCache[index] };
+    out_keys.forEach(k => { const el = document.getElementById(`out_${k}`); if (el) el.value = copy[k] || ''; });
+    out_currentEditIndex = -1; out_currentEditId = null;
+    document.getElementById('outwardForm').classList.remove('editing');
+    document.getElementById('out_btnAdd').style.display = 'inline-flex';
+    document.getElementById('out_btnUpdate').style.display = 'none';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast("Row copied — edit and save as new entry");
+}
+
+// ==================== TABLE RENDER ====================
+function inwardRefreshTables() {
+    const master = inwardCache;
+    const grouped = getGroupedList(master);
+
+    // Table A
+    const tbodyA = document.querySelector('#in_tableA tbody');
+    const tfootA = document.querySelector('#in_tableA tfoot');
+    const thsA = in_headersA.map((h, i) =>
+        `<th onclick="sortTable('inA',${i})">${h}<span class="sort-icon"></span></th>`
+    ).join('');
+    document.querySelector('#in_tableA thead').innerHTML =
+        `<tr><th class="cb-col"><input type="checkbox" id="inA_checkAll" onchange="toggleAllCheckboxes('inA',this)"></th>${thsA}<th>ACTION</th></tr>`;
+    applySortIcons('inA', in_headersA.length + 1);
+
+    let totalBagsA = 0, totalPacksA = 0;
+    tbodyA.innerHTML = '';
+    master.forEach((item, i) => {
+        const row = tbodyA.insertRow();
+        row.dataset.idx = i;
+        row.insertCell().innerHTML = `<div class="cb-col"><input type="checkbox" class="inA-cb" onchange="onCheckboxChange('inA')" data-idx="${i}"></div>`;
+        in_keys.forEach(k => row.insertCell().innerText = item[k] || '-');
+        row.insertCell().innerHTML =
+            `<button class="icon-btn edit-btn" onclick="inwardLoadForEdit(${i})">✎</button>` +
+            `<button class="icon-btn copy-btn" onclick="inwardDuplicateRow(${i})" title="Duplicate">⧉</button>` +
+            `<button class="icon-btn del-btn" onclick="inwardDeleteRow(${i})">✕</button>`;
+        totalBagsA += parseFloat(item.netBag) || 0;
+        totalPacksA += parseFloat(item.netPack) || 0;
+    });
+    tfootA.innerHTML = `<tr><td></td><td colspan="10" style="text-align:right">GRAND TOTAL:</td><td>${totalBagsA}</td><td>${totalPacksA}</td><td colspan="4"></td></tr>`;
+
+    // Table B
+    const outMap = new Map();
+    outwardCache.forEach(item => {
+        const key = `${item.count}|${item.brand}|${item.lotNo}|${item.peparCon}|${item.conPrBag}`.toUpperCase();
+        const b = parseFloat(item.netBag) || 0, p = parseFloat(item.netPack) || 0;
+        if (!outMap.has(key)) outMap.set(key, { outBag: b, outPack: p });
+        else { outMap.get(key).outBag += b; outMap.get(key).outPack += p; }
+    });
+
+    const tbodyB = document.querySelector('#in_tableB tbody');
+    const tfootB = document.querySelector('#in_tableB tfoot');
+    document.querySelector('#in_tableB thead').innerHTML = `<tr>${in_headersB.map(h => `<th>${h}</th>`).join('')}</tr>`;
+
+    let tBagIn = 0, tPackIn = 0, tBagOut = 0, tPackOut = 0;
+    tbodyB.innerHTML = '';
+    grouped.forEach((item, i) => {
+        const key = `${item.count}|${item.brand}|${item.lotNo}|${item.peparCon}|${item.conPrBag}`.toUpperCase();
+        const out = outMap.get(key) || { outBag: 0, outPack: 0 };
+        const remBag = item.sumBag - out.outBag, remPack = item.sumPack - out.outPack;
+        const row = tbodyB.insertRow();
+        row.insertCell().innerText = i + 1;
+        row.insertCell().innerText = item.count || '';
+        row.insertCell().innerText = item.brand || '';
+        row.insertCell().innerText = item.lotNo || '';
+        row.insertCell().innerText = item.peparCon || '';
+        row.insertCell().innerText = item.conPrBag || '';
+        row.insertCell().innerHTML = `<span style="color:#059669;font-weight:bold">${item.sumBag}</span>`;
+        row.insertCell().innerHTML = `<span style="color:#059669;font-weight:bold">${item.sumPack}</span>`;
+        row.insertCell().innerHTML = `<span style="color:#e11d48;font-weight:bold">${out.outBag}</span>`;
+        row.insertCell().innerHTML = `<span style="color:#e11d48;font-weight:bold">${out.outPack}</span>`;
+        row.insertCell().innerHTML = `<span class="sum-only" style="color:${remBag < 0 ? '#e11d48' : '#4f46e5'}">${remBag}</span>`;
+        row.insertCell().innerHTML = `<span class="sum-only" style="color:${remPack < 0 ? '#e11d48' : '#4f46e5'}">${remPack}</span>`;
+        row.insertCell().innerHTML = `${item.party || ''} ${item.rowCount > 1 ? `<span class="freq-badge">${item.rowCount}</span>` : ''}`;
+        tBagIn += item.sumBag; tPackIn += item.sumPack; tBagOut += out.outBag; tPackOut += out.outPack;
+    });
+    const remTB = tBagIn - tBagOut, remTP = tPackIn - tPackOut;
+    tfootB.innerHTML = `<tr><td colspan="6" style="text-align:right;font-weight:bold">TOTALS:</td>
+        <td style="color:#059669">${tBagIn}</td><td style="color:#059669">${tPackIn}</td>
+        <td style="color:#e11d48">${tBagOut}</td><td style="color:#e11d48">${tPackOut}</td>
+        <td style="color:#4f46e5;font-weight:bold">${remTB}</td>
+        <td style="color:#4f46e5;font-weight:bold">${remTP}</td><td></td></tr>`;
+}
+
+function outwardRefreshTables() {
+    const master = outwardCache;
+    const tbodyA = document.querySelector('#out_tableA tbody');
+    const tfootA = document.querySelector('#out_tableA tfoot');
+    const thsA = out_headersA.map((h, i) =>
+        `<th onclick="sortTable('outA',${i})">${h}<span class="sort-icon"></span></th>`
+    ).join('');
+    document.querySelector('#out_tableA thead').innerHTML =
+        `<tr><th class="cb-col"><input type="checkbox" id="outA_checkAll" onchange="toggleAllCheckboxes('outA',this)"></th>${thsA}<th>ACTION</th></tr>`;
+    applySortIcons('outA', out_headersA.length + 1);
+
+    let totalBagsA = 0, totalPacksA = 0;
+    tbodyA.innerHTML = '';
+    master.forEach((item, i) => {
+        const row = tbodyA.insertRow();
+        row.dataset.idx = i;
+        row.insertCell().innerHTML = `<div class="cb-col"><input type="checkbox" class="outA-cb" onchange="onCheckboxChange('outA')" data-idx="${i}"></div>`;
+        out_keys.forEach(k => row.insertCell().innerText = item[k] || '-');
+        row.insertCell().innerHTML =
+            `<button class="icon-btn edit-btn" onclick="outwardLoadForEdit(${i})">✎</button>` +
+            `<button class="icon-btn copy-btn" onclick="outwardDuplicateRow(${i})" title="Duplicate">⧉</button>` +
+            `<button class="icon-btn del-btn" onclick="outwardDeleteRow(${i})">✕</button>`;
+        totalBagsA += parseFloat(item.netBag) || 0;
+        totalPacksA += parseFloat(item.netPack) || 0;
+    });
+    tfootA.innerHTML = `<tr><td></td><td colspan="12" style="text-align:right">GRAND TOTAL:</td><td>${totalBagsA}</td><td>${totalPacksA}</td><td colspan="3"></td></tr>`;
+}
+
+function getGroupedList(masterData) {
+    const map = new Map();
+    masterData.forEach(item => {
+        const key = `${item.count}|${item.brand}|${item.lotNo}|${item.peparCon}|${item.conPrBag}|${item.party}`.toUpperCase();
+        const b = parseFloat(item.netBag) || 0, p = parseFloat(item.netPack) || 0;
+        if (!map.has(key)) map.set(key, { ...item, sumBag: b, sumPack: p, rowCount: 1 });
+        else { const ex = map.get(key); ex.sumBag += b; ex.sumPack += p; ex.rowCount += 1; }
+    });
+    return Array.from(map.values());
+}
+
+// ==================== EXPORT ====================
+function inwardExport(type, format) {
+    if (!inwardCache.length) return alert("No data to export");
+    const data = type === 'A' ? inwardCache : getGroupedList(inwardCache);
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "InwardData");
+    if (format === 'xlsx') XLSX.writeFile(wb, `Yarn_Inward_${type}.xlsx`);
+    else {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('l');
+        doc.autoTable({ html: type === 'A' ? '#in_tableA' : '#in_tableB' });
+        doc.save(`Yarn_Inward_${type}.pdf`);
+    }
+}
+
+function outwardExport(format) {
+    if (!outwardCache.length) return alert("No data to export");
+    const ws = XLSX.utils.json_to_sheet(outwardCache);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "OutwardData");
+    if (format === 'xlsx') XLSX.writeFile(wb, `Yarn_Outward_Master.xlsx`);
+    else {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('l');
+        doc.autoTable({ html: '#out_tableA' });
+        doc.save(`Yarn_Outward_Master.pdf`);
+    }
+}
+
+// ==================== SORT ====================
+function sortTable(prefix, colIdx) {
+    const ss = sortState[prefix];
+    if (ss.col === colIdx) ss.dir *= -1;
+    else { ss.col = colIdx; ss.dir = 1; }
+    const tableId = prefix === 'inA' ? 'in_tableA' : 'out_tableA';
+    const tbody = document.querySelector(`#${tableId} tbody`);
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+        const ta = a.cells[colIdx + 1] ? a.cells[colIdx + 1].innerText.trim() : '';
+        const tb = b.cells[colIdx + 1] ? b.cells[colIdx + 1].innerText.trim() : '';
+        const na = parseFloat(ta), nb = parseFloat(tb);
+        if (!isNaN(na) && !isNaN(nb)) return (na - nb) * ss.dir;
+        return ta.localeCompare(tb) * ss.dir;
+    });
+    rows.forEach(r => tbody.appendChild(r));
+    applySortIcons(prefix, prefix === 'inA' ? in_headersA.length + 1 : out_headersA.length + 1);
+    reapplySearches();
+}
+
+function applySortIcons(prefix, totalCols) {
+    const ss = sortState[prefix];
+    const tableId = prefix === 'inA' ? 'in_tableA' : 'out_tableA';
+    const ths = document.querySelectorAll(`#${tableId} thead th`);
+    ths.forEach((th, i) => {
+        const dataColIdx = i - 1;
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (dataColIdx === ss.col) th.classList.add(ss.dir === 1 ? 'sort-asc' : 'sort-desc');
+    });
+}
+
+// ==================== FILTER ====================
+const searchConfig = {
+    inA:  { tableId: 'in_tableA',  countCol: 3, brandCol: 4, dateCol: 1 },
+    inB:  { tableId: 'in_tableB',  countCol: 1, brandCol: 2, dateCol: -1 },
+    outA: { tableId: 'out_tableA', countCol: 3, brandCol: 4, dateCol: 1 },
+};
+
+function filterTable(prefix) {
+    const cfg = searchConfig[prefix];
+    const countQ = (document.getElementById(`${prefix}_countInput`)?.value || '').trim().toLowerCase();
+    const brandQ = (document.getElementById(`${prefix}_brandInput`)?.value || '').trim().toLowerCase();
+    const dateFrom = document.getElementById(`${prefix}_dateFrom`)?.value || '';
+    const dateTo   = document.getElementById(`${prefix}_dateTo`)?.value || '';
+
+    const rows = document.querySelectorAll(`#${cfg.tableId} tbody tr`);
+    let visible = 0;
+    rows.forEach(row => {
+        const countText = row.cells[cfg.countCol]?.innerText.toLowerCase() || '';
+        const brandText = row.cells[cfg.brandCol]?.innerText.toLowerCase() || '';
+        const dateText  = cfg.dateCol >= 0 ? (row.cells[cfg.dateCol]?.innerText || '') : '';
+        const countMatch = !countQ || countText.includes(countQ);
+        const brandMatch = !brandQ || brandText.includes(brandQ);
+        let dateMatch = true;
+        if (dateFrom && dateText) dateMatch = dateMatch && dateText >= dateFrom;
+        if (dateTo   && dateText) dateMatch = dateMatch && dateText <= dateTo;
+        const show = countMatch && brandMatch && dateMatch;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+    const countEl = document.getElementById(`${prefix}_rowCount`);
+    if (countEl) {
+        const total = rows.length;
+        countEl.textContent = (countQ || brandQ || dateFrom || dateTo) ? `${visible}/${total} rows` : '';
+    }
+}
+
+function clearSearch(prefix) {
+    ['countInput','brandInput','dateFrom','dateTo'].forEach(id => {
+        const el = document.getElementById(`${prefix}_${id}`);
+        if (el) el.value = '';
+    });
+    const cfg = searchConfig[prefix];
+    document.querySelectorAll(`#${cfg.tableId} tbody tr`).forEach(r => r.style.display = '');
+    const countEl = document.getElementById(`${prefix}_rowCount`);
+    if (countEl) countEl.textContent = '';
+}
+
+function reapplySearches() {
+    ['inA','inB','outA'].forEach(p => {
+        const cq = document.getElementById(`${p}_countInput`)?.value.trim();
+        const bq = document.getElementById(`${p}_brandInput`)?.value.trim();
+        const df = document.getElementById(`${p}_dateFrom`)?.value;
+        const dt = document.getElementById(`${p}_dateTo`)?.value;
+        if (cq || bq || df || dt) filterTable(p);
+    });
+}
+
+// ==================== BULK CHECKBOX ====================
+function onCheckboxChange(prefix) {
+    const cbs = document.querySelectorAll(`.${prefix}-cb:checked`);
+    const bar = document.getElementById(`${prefix}_bulkBar`);
+    const countEl = document.getElementById(`${prefix}_bulkCount`);
+    if (cbs.length > 0) { bar.classList.add('visible'); countEl.textContent = `${cbs.length} selected`; }
+    else { bar.classList.remove('visible'); }
+}
+
+function toggleAllCheckboxes(prefix, masterCb) {
+    document.querySelectorAll(`.${prefix}-cb`).forEach(cb => {
+        if (cb.closest('tr').style.display !== 'none') cb.checked = masterCb.checked;
+    });
+    onCheckboxChange(prefix);
+}
+
+function cancelBulk(prefix) {
+    document.querySelectorAll(`.${prefix}-cb`).forEach(cb => cb.checked = false);
+    const allCb = document.getElementById(`${prefix}_checkAll`);
+    if (allCb) allCb.checked = false;
+    document.getElementById(`${prefix}_bulkBar`).classList.remove('visible');
+}
+
+// ==================== DASHBOARD ====================
+function updateDashboards() {
+    const tBagIn   = inwardCache.reduce((s, i) => s + (parseFloat(i.netBag) || 0), 0);
+    const tPackIn  = inwardCache.reduce((s, i) => s + (parseFloat(i.netPack) || 0), 0);
+    const tBagOut  = outwardCache.reduce((s, i) => s + (parseFloat(i.netBag) || 0), 0);
+    const tPackOut = outwardCache.reduce((s, i) => s + (parseFloat(i.netPack) || 0), 0);
+    const uniqueSKUs = new Set(inwardCache.map(i => `${i.count}|${i.brand}|${i.lotNo}`)).size;
+    const uniqueParties = new Set(outwardCache.map(i => i.party).filter(Boolean)).size;
+
+    document.getElementById('dash_in_bags').textContent   = tBagIn;
+    document.getElementById('dash_in_packs').textContent  = tPackIn;
+    document.getElementById('dash_out_bags').textContent  = tBagOut;
+    document.getElementById('dash_out_packs').textContent = tPackOut;
+    document.getElementById('dash_rem_bags').textContent  = tBagIn - tBagOut;
+    document.getElementById('dash_rem_packs').textContent = tPackIn - tPackOut;
+    document.getElementById('dash_skus').textContent      = uniqueSKUs;
+    document.getElementById('dash_entries').textContent   = inwardCache.length;
+    document.getElementById('dash_out2_bags').textContent    = tBagOut;
+    document.getElementById('dash_out2_packs').textContent   = tPackOut;
+    document.getElementById('dash_out2_parties').textContent = uniqueParties;
+    document.getElementById('dash_out2_entries').textContent = outwardCache.length;
+}
+
+// ==================== BACKUP ====================
+const LAST_BACKUP_KEY = 'yarn_last_backup_date';
+
+function checkBackupReminder() {
+    const last = localStorage.getItem(LAST_BACKUP_KEY);
+    const dismissed = localStorage.getItem('yarn_backup_dismissed_today');
+    if (dismissed === new Date().toDateString()) return;
+    if (!last) {
+        const total = inwardCache.length + outwardCache.length;
+        if (total > 0) document.getElementById('backupBar').classList.add('visible');
+        return;
+    }
+    const daysSince = (Date.now() - new Date(last).getTime()) / 86400000;
+    if (daysSince >= 7) document.getElementById('backupBar').classList.add('visible');
+}
+
+function doBackupExport() {
+    const wb = XLSX.utils.book_new();
+    if (inwardCache.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(inwardCache), "Inward");
+    if (outwardCache.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(outwardCache), "Outward");
+    XLSX.writeFile(wb, `Yarn_Backup_${new Date().toISOString().slice(0,10)}.xlsx`);
+    localStorage.setItem(LAST_BACKUP_KEY, new Date().toISOString());
+    document.getElementById('backupBar').classList.remove('visible');
+    showToast("✅ Backup saved successfully!");
+}
+
+function dismissBackup() {
+    localStorage.setItem('yarn_backup_dismissed_today', new Date().toDateString());
+    document.getElementById('backupBar').classList.remove('visible');
+}
+
+// ==================== TOAST ====================
+function showToast(msg, withUndo = false) {
+    clearTimeout(toastTimer);
+    const toast = document.getElementById('toast');
+    const undoBtn = document.getElementById('toast-undo-btn');
+    document.getElementById('toast-msg').textContent = msg;
+    undoBtn.className = withUndo ? 'visible' : '';
+    toast.classList.remove('hiding');
+    toast.classList.add('show');
+    toastTimer = setTimeout(hideToast, withUndo ? 5000 : 2500);
+}
+
+function hideToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.add('hiding');
+    toast.classList.remove('show');
+    setTimeout(() => { toast.classList.remove('hiding'); toast.style.visibility = 'hidden'; }, 400);
+    setTimeout(() => { toast.style.visibility = ''; }, 500);
+}
+
+// ==================== TABS ====================
+function switchTab(n) {
+    document.querySelectorAll('.tab-button').forEach((btn, i) => btn.classList.toggle('active', i === n));
+    document.querySelectorAll('.tab-content').forEach((c, i) => c.classList.toggle('active', i === n));
+}
+
+// ==================== INIT ====================
+document.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('in_date').valueAsDate = new Date();
+    document.getElementById('out_date').valueAsDate = new Date();
+    inwardSetupAutoCalc();
+    outwardSetupAutoCalc();
+    await fetchAll(); // loads from Supabase
+});
+</script>
+</body>
+</html>
